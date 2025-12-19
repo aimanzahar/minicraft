@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MiniCraft - HTML5</title>
+<style>
+  body {
+    margin: 0;
+    background: #1e1e1e;
+    color: #ddd;
+    font-family: Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  #wrap {
+    max-width: 980px;
+    width: 100%;
+    padding: 16px;
+  }
+  h1 {
+    margin: 4px 0 8px;
+  }
+  canvas {
+    background: #76c7ff;
+    border: 2px solid #333;
+    display: block;
+    margin: 8px auto;
+    image-rendering: pixelated;
+  }
+  #hud {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    margin-top: 4px;
+  }
+  #hint {
+    font-size: 13px;
+    color: #bbb;
+  }
+  .swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 1px solid #000;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  #ui {
+    display: flex;
+    gap: 12px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+  .panel {
+    background: #262626;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 10px 12px;
+    flex: 1 1 280px;
+  }
+  .panel-title {
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 8px;
+  }
+  .inventory-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+    gap: 8px;
+  }
+  .inv-slot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px;
+    border-radius: 4px;
+    background: #1b1b1b;
+    border: 1px solid transparent;
+  }
+  .inv-slot.selected {
+    border-color: #6aa8ff;
+    background: #1f2a3a;
+  }
+  .inv-name {
+    flex: 1 1 auto;
+    font-size: 13px;
+  }
+  .inv-count {
+    font-variant-numeric: tabular-nums;
+    font-weight: bold;
+  }
+  .inv-swatch {
+    width: 14px;
+    height: 14px;
+  }
+  .crafting-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 6px 0;
+  }
+  .craft-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #1b1b1b;
+    border: 1px solid #333;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+  .craft-arrow {
+    color: #9fb9ff;
+    font-size: 16px;
+  }
+  .craft-hint {
+    font-size: 12px;
+    color: #aaa;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <h1>MiniCraft</h1>
+  <div id="hint">Move: A/D or arrows, Jump: W/Up/Space, Mine: left click, Place: right click, Select block: 1-5</div>
+  <canvas id="game" width="960" height="540"></canvas>
+  <div id="hud">
+    <div>Selected: <span id="selectedName">Grass</span></div>
+    <div>Block: <span id="selectedSwatch" class="swatch"></span></div>
+  </div>
+  <div id="ui">
+    <div class="panel" id="inventoryPanel">
+      <div class="panel-title">Inventory</div>
+      <div id="inventoryGrid" class="inventory-grid">
+        <div class="inv-slot" data-block="1">
+          <span class="swatch inv-swatch" data-block="1"></span>
+          <span class="inv-name">Grass</span>
+          <span class="inv-count" id="inv-1">0</span>
+        </div>
+        <div class="inv-slot" data-block="2">
+          <span class="swatch inv-swatch" data-block="2"></span>
+          <span class="inv-name">Dirt</span>
+          <span class="inv-count" id="inv-2">0</span>
+        </div>
+        <div class="inv-slot" data-block="3">
+          <span class="swatch inv-swatch" data-block="3"></span>
+          <span class="inv-name">Stone</span>
+          <span class="inv-count" id="inv-3">0</span>
+        </div>
+        <div class="inv-slot" data-block="4">
+          <span class="swatch inv-swatch" data-block="4"></span>
+          <span class="inv-name">Wood</span>
+          <span class="inv-count" id="inv-4">0</span>
+        </div>
+        <div class="inv-slot" data-block="5">
+          <span class="swatch inv-swatch" data-block="5"></span>
+          <span class="inv-name">Leaves</span>
+          <span class="inv-count" id="inv-5">0</span>
+        </div>
+      </div>
+    </div>
+    <div class="panel" id="craftingPanel">
+      <div class="panel-title">Crafting</div>
+      <div class="crafting-row">
+        <div class="craft-item">
+          <span class="swatch inv-swatch" data-block="4"></span>
+          <span>Wood x2</span>
+        </div>
+        <div class="craft-arrow">→</div>
+        <div class="craft-item">
+          <span class="swatch inv-swatch" data-block="5"></span>
+          <span>Leaves x1</span>
+        </div>
+      </div>
+      <div class="craft-hint">Collect materials to craft (display only).</div>
+    </div>
+  </div>
+</div>
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+
+  const TILE = 24;
+  const WORLD_W = 120;
+  const WORLD_H = 40;
+
+  const blocks = [
+    { name: 'Air', color: 'rgba(0,0,0,0)' },
+    { name: 'Grass', color: '#5fae3b' },
+    { name: 'Dirt', color: '#8b5a2b' },
+    { name: 'Stone', color: '#8f8f8f' },
+    { name: 'Wood', color: '#a56a2b' },
+    { name: 'Leaves', color: '#3d8b3d' },
+  ];
+
+  const world = Array.from({ length: WORLD_H }, () => Array(WORLD_W).fill(0));
+  const heightMap = new Array(WORLD_W).fill(0);
+
+  function clamp(val, min, max) {
+    return Math.max(min, Math.min(max, val));
+  }
+
+  function generateWorld() {
+    let h = Math.floor(WORLD_H * 0.55);
+    for (let x = 0; x < WORLD_W; x++) {
+      h = clamp(h + Math.floor(Math.random() * 3) - 1, 10, WORLD_H - 8);
+      heightMap[x] = h;
+      for (let y = h; y < WORLD_H; y++) {
+        if (y === h) world[y][x] = 1;
+        else if (y < h + 3) world[y][x] = 2;
+        else world[y][x] = 3;
+      }
+    }
+    for (let x = 2; x < WORLD_W - 2; x++) {
+      if (Math.random() < 0.08) {
+        const base = heightMap[x] - 1;
+        if (base > 3) {
+          world[base][x] = 4;
+          world[base - 1][x] = 4;
+          world[base - 2][x] = 4;
+          for (let dy = -4; dy <= -2; dy++) {
+            for (let dx = -2; dx <= 2; dx++) {
+              if (Math.abs(dx) + Math.abs(dy + 3) < 4) {
+                const tx = x + dx;
+                const ty = base + dy;
+                if (ty >= 0 && tx >= 0 && tx < WORLD_W) world[ty][tx] = 5;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  generateWorld();
+
+  const player = {
+    x: TILE * 6,
+    y: TILE * (heightMap[6] - 3),
+    w: TILE * 0.8,
+    h: TILE * 1.6,
+    vx: 0,
+    vy: 0,
+    onGround: false,
+  };
+
+  const keys = new Set();
+  window.addEventListener('keydown', (e) => {
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+      e.preventDefault();
+    }
+    keys.add(e.code);
+    if (e.code.startsWith('Digit')) {
+      const num = Number(e.code.replace('Digit', ''));
+      if (num >= 1 && num <= 5) setSelected(num);
+    }
+  });
+  window.addEventListener('keyup', (e) => keys.delete(e.code));
+
+  let selected = 1;
+  const selectedName = document.getElementById('selectedName');
+  const selectedSwatch = document.getElementById('selectedSwatch');
+  const inventoryCounts = new Array(blocks.length).fill(0);
+  const inventorySlots = Array.from(document.querySelectorAll('.inv-slot'));
+  const swatches = Array.from(document.querySelectorAll('.inv-swatch'));
+
+  function updateInventoryUI() {
+    for (let i = 1; i < blocks.length; i++) {
+      const countEl = document.getElementById(`inv-${i}`);
+      if (countEl) countEl.textContent = inventoryCounts[i];
+    }
+    inventorySlots.forEach((slot) => {
+      const id = Number(slot.dataset.block);
+      slot.classList.toggle('selected', id === selected);
+    });
+  }
+
+  swatches.forEach((swatch) => {
+    const id = Number(swatch.dataset.block);
+    if (blocks[id]) swatch.style.background = blocks[id].color;
+  });
+
+  function setSelected(id) {
+    selected = id;
+    selectedName.textContent = blocks[id].name;
+    selectedSwatch.style.background = blocks[id].color;
+    updateInventoryUI();
+  }
+
+  inventoryCounts[1] = 8;
+  inventoryCounts[2] = 8;
+  inventoryCounts[3] = 6;
+  inventoryCounts[4] = 4;
+  inventoryCounts[5] = 4;
+  setSelected(1);
+  updateInventoryUI();
+
+  function isSolidTile(tx, ty) {
+    if (tx < 0 || tx >= WORLD_W || ty < 0 || ty >= WORLD_H) return true;
+    return world[ty][tx] !== 0;
+  }
+
+  function resolveX() {
+    const top = Math.floor(player.y / TILE);
+    const bottom = Math.floor((player.y + player.h - 1) / TILE);
+    if (player.vx > 0) {
+      const right = Math.floor((player.x + player.w - 1) / TILE);
+      for (let y = top; y <= bottom; y++) {
+        if (isSolidTile(right, y)) {
+          player.x = right * TILE - player.w;
+          player.vx = 0;
+          break;
+        }
+      }
+    } else if (player.vx < 0) {
+      const left = Math.floor(player.x / TILE);
+      for (let y = top; y <= bottom; y++) {
+        if (isSolidTile(left, y)) {
+          player.x = (left + 1) * TILE;
+          player.vx = 0;
+          break;
+        }
+      }
+    }
+  }
+
+  function resolveY() {
+    const left = Math.floor(player.x / TILE);
+    const right = Math.floor((player.x + player.w - 1) / TILE);
+    player.onGround = false;
+    if (player.vy > 0) {
+      const bottom = Math.floor((player.y + player.h - 1) / TILE);
+      for (let x = left; x <= right; x++) {
+        if (isSolidTile(x, bottom)) {
+          player.y = bottom * TILE - player.h;
+          player.vy = 0;
+          player.onGround = true;
+          break;
+        }
+      }
+    } else if (player.vy < 0) {
+      const top = Math.floor(player.y / TILE);
+      for (let x = left; x <= right; x++) {
+        if (isSolidTile(x, top)) {
+          player.y = (top + 1) * TILE;
+          player.vy = 0;
+          break;
+        }
+      }
+    }
+  }
+
+  const camera = { x: 0, y: 0 };
+
+  function update() {
+    const accel = 0.8;
+    const maxSpeed = 4.2;
+
+    if (keys.has('ArrowLeft') || keys.has('KeyA')) player.vx -= accel;
+    if (keys.has('ArrowRight') || keys.has('KeyD')) player.vx += accel;
+
+    if ((keys.has('ArrowUp') || keys.has('KeyW') || keys.has('Space')) && player.onGround) {
+      player.vy = -12;
+      player.onGround = false;
+    }
+
+    player.vx *= 0.82;
+    player.vx = clamp(player.vx, -maxSpeed, maxSpeed);
+
+    player.vy += 0.7;
+    player.vy = clamp(player.vy, -16, 16);
+
+    player.x += player.vx;
+    resolveX();
+    player.y += player.vy;
+    resolveY();
+
+    camera.x = clamp(player.x + player.w / 2 - canvas.width / 2, 0, WORLD_W * TILE - canvas.width);
+    camera.y = clamp(player.y + player.h / 2 - canvas.height / 2, 0, WORLD_H * TILE - canvas.height);
+  }
+
+  function drawTile(type, x, y) {
+    if (type === 0) return;
+    ctx.fillStyle = blocks[type].color;
+    ctx.fillRect(x, y, TILE, TILE);
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.fillRect(x, y + TILE - 4, TILE, 4);
+  }
+
+  function drawWorld() {
+    const startX = Math.floor(camera.x / TILE);
+    const endX = Math.min(WORLD_W, Math.ceil((camera.x + canvas.width) / TILE));
+    const startY = Math.floor(camera.y / TILE);
+    const endY = Math.min(WORLD_H, Math.ceil((camera.y + canvas.height) / TILE));
+
+    for (let y = startY; y < endY; y++) {
+      for (let x = startX; x < endX; x++) {
+        drawTile(world[y][x], x * TILE - camera.x, y * TILE - camera.y);
+      }
+    }
+  }
+
+  function drawPlayer() {
+    ctx.fillStyle = '#f2c28d';
+    ctx.fillRect(player.x - camera.x, player.y - camera.y, player.w, player.h);
+    ctx.fillStyle = '#3a5caa';
+    ctx.fillRect(player.x - camera.x, player.y - camera.y + player.h * 0.6, player.w, player.h * 0.4);
+  }
+
+  let mouse = { x: 0, y: 0, tileX: 0, tileY: 0 };
+
+  function updateMouse(e) {
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - rect.left + camera.x;
+    mouse.y = e.clientY - rect.top + camera.y;
+    mouse.tileX = Math.floor(mouse.x / TILE);
+    mouse.tileY = Math.floor(mouse.y / TILE);
+  }
+
+  function inReach(tx, ty) {
+    const px = player.x + player.w / 2;
+    const py = player.y + player.h / 2;
+    const cx = tx * TILE + TILE / 2;
+    const cy = ty * TILE + TILE / 2;
+    return Math.hypot(px - cx, py - cy) <= TILE * 5;
+  }
+
+  function isPlayerOverTile(tx, ty) {
+    const tileRect = { x: tx * TILE, y: ty * TILE, w: TILE, h: TILE };
+    return (
+      player.x < tileRect.x + tileRect.w &&
+      player.x + player.w > tileRect.x &&
+      player.y < tileRect.y + tileRect.h &&
+      player.y + player.h > tileRect.y
+    );
+  }
+
+  canvas.addEventListener('mousemove', updateMouse);
+  canvas.addEventListener('mousedown', (e) => {
+    updateMouse(e);
+    if (!inReach(mouse.tileX, mouse.tileY)) return;
+    if (mouse.tileX < 0 || mouse.tileX >= WORLD_W || mouse.tileY < 0 || mouse.tileY >= WORLD_H) return;
+
+    if (e.button === 0) {
+      const mined = world[mouse.tileY][mouse.tileX];
+      if (mined !== 0) {
+        world[mouse.tileY][mouse.tileX] = 0;
+        inventoryCounts[mined] += 1;
+        updateInventoryUI();
+      }
+    } else if (e.button === 2) {
+      if (world[mouse.tileY][mouse.tileX] === 0 && !isPlayerOverTile(mouse.tileX, mouse.tileY)) {
+        world[mouse.tileY][mouse.tileX] = selected;
+        if (inventoryCounts[selected] > 0) {
+          inventoryCounts[selected] -= 1;
+          updateInventoryUI();
+        }
+      }
+    }
+  });
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  function drawCrosshair() {
+    if (mouse.tileX < 0 || mouse.tileX >= WORLD_W || mouse.tileY < 0 || mouse.tileY >= WORLD_H) return;
+    if (!inReach(mouse.tileX, mouse.tileY)) return;
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(
+      mouse.tileX * TILE - camera.x,
+      mouse.tileY * TILE - camera.y,
+      TILE,
+      TILE
+    );
+  }
+
+  let last = 0;
+  function loop(ts) {
+    last = ts;
+
+    update();
+
+    ctx.fillStyle = '#79c5ff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    drawWorld();
+    drawPlayer();
+    drawCrosshair();
+
+    requestAnimationFrame(loop);
+  }
+
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
